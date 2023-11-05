@@ -76,7 +76,7 @@ Below are some images of the board in making and also some examples of different
         * Button 1 - Exit PIC standby
 
 ## Hardware
-Here is the [ClockOS - 7-Segment Display Board rev 1.1 - schematics](docs/ClockOS+-+7-Segment+Display+Board+rev+1.1+-+schematics.pdf) (pdf) for this construction.
+Here is the [ClockOS - 7-Segment Display Board rev 1.1 - schematics](docs/ClockOS%20-%207-Segment%20Display%20Board%20rev%201.1%20-%20schematics.pdf) (pdf) for this construction.
 
 ### Parts used for this project
 - 1 pcs ClockOS board (Arduino based)
