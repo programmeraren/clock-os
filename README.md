@@ -1,7 +1,7 @@
 # Clock OS with Display
-For some time I wanted to add a time and date display to the ClockOS board that I bought in April 2015. The original [ClockOS was a Kickstarter project](https://www.kickstarter.com/projects/threetree/clockos-rgb-led-clock-arduino-programable-0) and consists of the outer ring with the Arduino microprocessor, and 3×60 RGB LEDs for displaying hours, minutes and seconds. Five years later I finally got round to actually creating a small board on which I have mounted the display using 7 segment LED displays.
+For some time I wanted to add a time and date display to the ClockOS board that I bought in April 2015. The original [ClockOS was a Kickstarter project](https://www.kickstarter.com/projects/threetree/clockos-rgb-led-clock-arduino-programable-0) and consists of the outer ring with the Arduino microprocessor, and 3×60 RGB LEDs for displaying hours, minutes and seconds. Five years later I finally got round to actually creating a small board on which I have mounted the display using 7-segment LEDs.
 
-The ClockOS is based on the Arduino and I had the [original source code](https://github.com/willscott/clockOS), so it was no problem extending the original code to also include the code needed to control the display. I actually rewrote most of the code to make it more efficient and to add the functionality for the display.
+The ClockOS, now considered as abandonware, is based on the Arduino and I had the [original source code](https://github.com/willscott/clockOS), so it was no problem extending the original code to also include the code needed to control the display. I actually rewrote most of the code to make it more efficient and to add the functionality for the display.
 
 The display is based on the Holtek HT16K33 chip which communicates with the host microcontroller using I<sup>2</sup>C and there are Arduino libraries available to support this chip making it very easy to implement.
 
@@ -49,23 +49,27 @@ Below are some images of the board in making and also some examples of different
         * Button 3 - Up
         * Button 2 - Enter
         * Button 1 - Down
-#### **Menu 2 - Config current clock style**
-    * Hours
+#### **Menu 2 - Config display**
+    * Set Startup Face - Clock style (0-9)
+    * Set Display      - None, Time, Date, Time & Date alternating
+    * Set Speed        - Choose alternating speed in seconds
+    * Set Colons       - On or Flashing
+#### **Menu 3 - Config current clock style**
+    * Set Hours
         * Button 3 - Change colors  (0-disable)
         * Button 1 - Hand, Dot, Trace
-    * Minutes
+    * Set Minutes
         * Button 3 - Change colors  (0-disable)
         * Button 1 - Hand, Dot, Trace
-    * Seconds
+    * Set Seconds
         * Button 3 - Change colors  (0-disable)
         * Button 1 - Hand, Dot, Trace
-    * Markers
+    * Set Markers
         * Button 3 - Change colors  (0-disable)
         * Button 1 - Quarterly, Hourly, Twelve only
-#### **Menu 3 - Config display**
-    * Display - None, Time, Date, Time & Date alternating
-    * Speed   - Choose alternating speed in seconds
-    * Colons  - On or Flashing
+
+### Reset factory settings
+    * Button 1 & 2 - Hold down until full red circle is completed for reset to factory settings
 
 ### Programming mode    
     * Button 1 & 2 & 3 - PIC standby for programming Arduino (PIC is also reading the buttons)

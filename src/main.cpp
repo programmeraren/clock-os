@@ -37,17 +37,17 @@
 //                  Adding HT16K33 to control 6 pcs of 7 segment LED displays for showing
 //                  time, date and configuration.
 //                  Removed pendulum display functionality.
-// 2.2 2023-11-03   Converted project to PlatformIO.
+// 2.2 2023-11-05   Converted project to PlatformIO.
 //
 //-------------------------------------------------------------------------------------------------
 
 //-------------------------------------------------------------------------------------------------
-// NOTE WHEN PROGRAMMIN ClockOS ARDUINO:
+// NOTE WHEN PROGRAMMING ClockOS ARDUINO:
 // The ClockOS board looks like an Arduino PRO Mini (5V 16mhz AT168)
 //-------------------------------------------------------------------------------------------------
 
 //-------------------------------------------------------------------------------------------------
-//  Note 512 byes of Eeprom available!
+//  Note 512 bytes of Eeprom available!
 //       1k of RAM
 //       14k of Flash
 //
@@ -90,6 +90,7 @@
 
 //  Define delays (in milliseconds)
 #define ANIMATION_SHORT_DELAY         10
+#define ANIMATION_KEY_DELAY           50
 #define BUTTON_DEBOUNCE_SHORT_DELAY   100
 #define BUTTON_PAUSE_SHORT_DELAY      20
 #define BUTTON_PAUSE_LONG_DELAY       450
@@ -122,9 +123,10 @@
 //  Define mode LED settings
 #define MODE_LED_NONE           0x00
 #define MODE_LED_SET_UNUSED     0x01
-#define MODE_LED_SET_SETTINGS   0x02
-#define MODE_LED_SET_STYLING    0x04
-#define MODE_LED_SET_TIME_DATE  0x08
+#define MODE_LED_SET_TIME_DATE  0x02
+#define MODE_LED_SET_SETTINGS   0x04
+#define MODE_LED_SET_STYLING    0x08
+#define MODE_LED_RESET          0x0f
 
 //  Define Eeprom memory positions
 #define EEPROM_CLOCK_FACE_NUMBER    0
@@ -132,8 +134,8 @@
 #define EEPROM_ALTERNATE_COUNTER    2
 #define EEPROM_CLOCK_FACE_SETTINGS  10
 
-//  Define number of bytes for each clock face
-#define DEFAULT_CLOCK_FACE_LENGTH 5
+//  Define Eeprom memory size for each clock face
+#define DEFAULT_CLOCK_FACE_LENGTH 10
 
 //  Define number of factory clock faces
 #define DEFAULT_FACTORY_CLOCK_FACES 10
@@ -163,6 +165,7 @@
 #define RING_CMD_END          0x03
 
 //  Define LED rings commands
+#define RING_NONE                   0x00
 #define RING_SECONDS                0x01
 #define RING_MINUTES                0x02
 #define RING_MINUTES_SECONDS        0x03
@@ -198,19 +201,21 @@
 #define DISPLAY_TIME_AND_DATE 0x30
 #define DISPLAY_CONFIG        0x40
 #define DISPLAY_SETTINGS      0x80
+#define DISPLAY_RESET         0xf0
 
 #define LED_SEGMENT_ZERO_BYTE  0x00
 
 //  Define button pins
-#define PIN_BUTTON1 8
-#define PIN_BUTTON2 9
-#define PIN_BUTTON3 10
+#define PIN_BUTTON1   8
+#define PIN_BUTTON2   9
+#define PIN_BUTTON3   10
 
 //  Define modes
 #define MODE_NORMAL             0
-#define MODE_SET_TIME_AND_DATE  1
-#define MODE_SET_STYLING        2
-#define MODE_SET_SETTINGS       3
+#define MODE_SET_STYLING        1
+#define MODE_SET_SETTINGS       2
+#define MODE_SET_TIME_AND_DATE  3
+
 
 byte mode = MODE_NORMAL;
 byte pressedKeys = KEY_PRESSED_NONE;
@@ -230,12 +235,13 @@ byte previousMonths = 0;
 byte previousDayOfMonth = 0;
 
 // Clock display variables
-byte markers = 0;
+byte markers = RING_NONE;
 byte loopMarker = 0;
 
 #define DISP_CHAR_BLANK     ' '
 #define DISP_CHAR_SELECTED  ' '
 const char DISP_HELLO[] PROGMEM = "HELLO ";
+const char DISP_RESET[] PROGMEM = "rESEt ";
 const char DISP_SELECT[] PROGMEM = "SELECt";
 const char DISP_FACE[] PROGMEM = "FACE  ";
 const char DISP_MENU_FACE[] PROGMEM = "FACE  ";
@@ -285,17 +291,25 @@ byte secondsColor = COLOR_GREEN;
 //  bit 5 = dot mode active
 //  bit 6 = trace mode active
 //
-const byte DEFAULT_FACTORY_COLORS[DEFAULT_FACTORY_CLOCK_FACES][4] PROGMEM =
-{ {COLOR_BLUE|MARKER_HOUR_EVERY, COLOR_RED, COLOR_RED, COLOR_GREEN|COLOR_TRACE},
-  {COLOR_BLUE|MARKER_HOUR_TWELTH, COLOR_RED, COLOR_RED, COLOR_GREEN},
-  {COLOR_BLUE|MARKER_HOUR_EVERY, COLOR_RED, COLOR_RED, COLOR_GREEN},
-  {COLOR_BLUE|MARKER_HOUR_QUARTERS, COLOR_RED, COLOR_RED, COLOR_BLANK},
-  {COLOR_CYAN|MARKER_HOUR_EVERY, COLOR_RED, COLOR_RED, COLOR_BLUE|COLOR_TRACE},
-  {COLOR_BLUE|MARKER_HOUR_QUARTERS, COLOR_CYAN, COLOR_CYAN, COLOR_GREEN},
-  {COLOR_PURPLE|MARKER_HOUR_TWELTH, COLOR_GREEN, COLOR_GREEN, COLOR_RED},
-  {COLOR_CYAN|MARKER_HOUR_EVERY, COLOR_CYAN, COLOR_CYAN, COLOR_CYAN},
-  {COLOR_BLUE|MARKER_HOUR_EVERY, COLOR_BLUE, COLOR_BLUE, COLOR_BLUE},
-  {COLOR_BLANK,COLOR_BLUE|COLOR_TRACE, COLOR_GREEN|COLOR_TRACE, COLOR_RED|COLOR_TRACE}
+const byte DEFAULT_FACTORY_COLORS[DEFAULT_FACTORY_CLOCK_FACES][4] =
+{
+  // Hands examples
+  {COLOR_BLUE|MARKER_HOUR_EVERY, COLOR_CYAN|COLOR_HANDS, COLOR_GREEN|COLOR_HANDS, COLOR_RED|COLOR_HANDS},
+  {COLOR_PURPLE|MARKER_HOUR_QUARTERS, COLOR_CYAN|COLOR_TRACE, COLOR_GREEN|COLOR_HANDS, COLOR_RED|COLOR_DOT},
+
+  // Trace examples
+  {COLOR_BLUE|MARKER_HOUR_EVERY, COLOR_BLANK|COLOR_DOT, COLOR_BLANK|COLOR_DOT, COLOR_RED|COLOR_TRACE},
+  {COLOR_RED|MARKER_HOUR_QUARTERS, COLOR_BLANK|COLOR_DOT, COLOR_BLANK|COLOR_DOT, COLOR_BLUE|COLOR_TRACE},
+  {COLOR_ORANGE|MARKER_HOUR_TWELTH, COLOR_BLANK|COLOR_DOT, COLOR_GREEN|COLOR_TRACE, COLOR_BLUE|COLOR_TRACE},
+
+  // Simple dot examples
+  {COLOR_BLANK, COLOR_BLANK|COLOR_DOT, COLOR_BLANK|COLOR_DOT, COLOR_RED|COLOR_DOT},
+  {COLOR_BLANK, COLOR_BLUE|COLOR_DOT, COLOR_GREEN|COLOR_DOT, COLOR_RED|COLOR_DOT},
+  {COLOR_BLANK, COLOR_BLANK|COLOR_DOT, COLOR_BLANK|COLOR_DOT, COLOR_RED|COLOR_TRACE},
+
+  // Only traces examples
+  {COLOR_BLUE|MARKER_HOUR_EVERY,COLOR_CYAN|COLOR_TRACE, COLOR_GREEN|COLOR_TRACE, COLOR_RED|COLOR_TRACE},
+  {COLOR_BLANK, COLOR_BLANK|COLOR_TRACE, COLOR_GREEN|COLOR_TRACE, COLOR_RED|COLOR_TRACE}
 };
 
 //  ====================================================================================
@@ -318,7 +332,7 @@ byte bcdToDec(byte val) {
 // Probably only want to use this for testing
 /*void stopDs1307() {
   Wire.beginTransmission(DS1307_I2C_ADDRESS);
-  int i = 0;
+  byte i = 0;
   Wire.write(i);
   Wire.write(0x80);
   Wire.endTransmission();
@@ -640,7 +654,7 @@ void ledSegmentsClearAll() {
   Wire.beginTransmission(HT16K33_I2C_ADDRESS);
   Wire.write(0x00); // Start at address
 
-  for (int r = 0; r < 16; r++) {
+  for (byte r = 0; r < 16; r++) {
     Wire.write(LED_SEGMENT_ZERO_BYTE);
   }
 
@@ -654,7 +668,7 @@ void ledSegmentsDisplayStatus() {
   Wire.endTransmission();
 }
 
-void setLedSegmentsBrightness(uint8_t b) {
+void setLedSegmentsBrightness(byte b) {
   if(b > 15) {
     return;
   }
@@ -955,15 +969,15 @@ void drawHourMarkers(byte steps, byte drawColor) {
       if (seconds == loopMarker) {
         if (bitRead(secondsColor, COLOR_BIT_TRACE) == 1) {
           if (seconds > 0) {
-            // Do not display seconds marker if seconds trace is there
+            // Do not display marker marker if seconds trace is here, except at twelve position
             markers = markers & RING_HOURS_MINUTES;
           }
         } else if (bitRead(secondsColor, COLOR_BIT_DOT) == 1) {
-          // Do not display seconds marker if seconds dot is there
+          // Do not display marker marker if seconds dot is here
           markers = markers & RING_HOURS_MINUTES;
-        } else {
-          // Covers whole marker when seconds hand is there
-          markers = 0;
+        } else if (bitRead(secondsColor, COLOR_BIT_HANDS) == 1) {
+          // Covers whole marker when seconds hand is here
+          markers = RING_NONE;
         }
       }
     }
@@ -972,15 +986,15 @@ void drawHourMarkers(byte steps, byte drawColor) {
       if (minutes == loopMarker) {
         if (bitRead(minutesColor, COLOR_BIT_TRACE) == 1) {
           if (minutes > 0) {
-            // Do not display dots if minutes trace is there
+            // Do not display marker if minutes trace is here, except at twelve position
             markers = markers & RING_HOURS_SECONDS;
           }
         } else if (bitRead(minutesColor, COLOR_BIT_DOT) == 1) {
-          // Do not display dots if minutes dot is there
+          // Do not display marker if minutes dot is here
           markers = markers & RING_HOURS_SECONDS;
-        } else {
-          // Covers whole marker when minutes hand is there
-          markers = 0;
+        } else if (bitRead(minutesColor, COLOR_BIT_HANDS) == 1) {
+          // Covers whole marker when minutes hand is here
+          markers = RING_NONE;
         }
       }
     }
@@ -989,20 +1003,20 @@ void drawHourMarkers(byte steps, byte drawColor) {
       if (hoursHand == loopMarker) {
         if (bitRead(hoursColor, COLOR_BIT_TRACE) == 1) {
           if (hoursHand > 0) {
-            // Do not display dots if hours trace is there
+            // Do not display marker if hours trace is here, except at twelve position
             markers = markers & RING_MINUTES_SECONDS;
           }
         } else if (bitRead(hoursColor, COLOR_BIT_DOT) == 1) {
-          // Do not display dots if hours dot is there
+          // Do not display marker if hours dot is here
           markers = markers & RING_MINUTES_SECONDS;
-        } else {
-          // Covers everything but seconds when hours hand is there
+        } else if (bitRead(hoursColor, COLOR_BIT_HANDS) == 1) {
+          // Covers marker except seconds when hours hand is here
           markers = markers & RING_SECONDS;
         }
       }
     }
 
-    if (markers > 0) {
+    if (markers != RING_NONE) {
       ledWrite(markers, loopMarker, drawColor);
     }
   }
@@ -1022,41 +1036,14 @@ void drawMarkers() {
   }
 }
 
-void clearMarkers() {
-  drawHourMarkers(5, COLOR_BLANK);
-}
-
 //  ====================================================================================
 
 //  Clear hands (if needed)
 //
 void clearHands() {
-  int r;
+  byte r;
 
-  //  Check if minutes should be handled
-  if ((minutesColor & 0x0f) != COLOR_BLANK) {
-    if (minutes != previousMinutes) {
-      if (bitRead(minutesColor, COLOR_BIT_TRACE) == 1) {
-        if (minutes == 0) {
-          //  Clear the ring if moved to zero position.
-          ledWriteAllInRingOff(RING_MINUTES);
-        } else {
-          //  Clear minutes down to current time.
-          for (r = previousMinutes; r > minutes; r--) {
-            ledWrite(RING_MINUTES, r, COLOR_BLANK);
-          }
-        }
-      } else if (bitRead(minutesColor, COLOR_BIT_DOT) == 1) {
-          //  Clear the previous minutes
-          ledWrite(RING_MINUTES, previousMinutes, COLOR_BLANK);
-      } else if (bitRead(minutesColor, COLOR_BIT_HANDS) == 1) {
-          //  Clear the previous minutes
-          ledWrite(RING_HOURS_MINUTES_SECONDS, previousMinutes, COLOR_BLANK);
-      }
-    }
-  }
-
-  //  Check if hours should be handled
+  //  Check if hours should be cleared
   if ((hoursColor & 0x0f) != COLOR_BLANK) {
     if (hoursHand != previousHoursHand) {
       if (bitRead(hoursColor, COLOR_BIT_TRACE) == 1) {
@@ -1079,7 +1066,30 @@ void clearHands() {
     }
   }
 
-  //  Check if seconds should be handled
+  //  Check if minutes should be cleared
+  if ((minutesColor & 0x0f) != COLOR_BLANK) {
+    if (minutes != previousMinutes) {
+      if (bitRead(minutesColor, COLOR_BIT_TRACE) == 1) {
+        if (minutes == 0) {
+          //  Clear the ring if moved to zero position.
+          ledWriteAllInRingOff(RING_MINUTES);
+        } else {
+          //  Clear minutes down to current time.
+          for (r = previousMinutes; r > minutes; r--) {
+            ledWrite(RING_MINUTES, r, COLOR_BLANK);
+          }
+        }
+      } else if (bitRead(minutesColor, COLOR_BIT_DOT) == 1) {
+          //  Clear the previous minutes
+          ledWrite(RING_MINUTES, previousMinutes, COLOR_BLANK);
+      } else if (bitRead(minutesColor, COLOR_BIT_HANDS) == 1) {
+          //  Clear the previous minutes
+          ledWrite(RING_HOURS_MINUTES_SECONDS, previousMinutes, COLOR_BLANK);
+      }
+    }
+  }
+
+  //  Check if seconds should be cleared
   if ((secondsColor & 0x0f) != COLOR_BLANK) {
     if (seconds != previousSeconds) {
       if (bitRead(secondsColor, COLOR_BIT_TRACE) == 1) {
@@ -1106,51 +1116,109 @@ void clearHands() {
 //  Draw the current hands (if needed)
 //
 void drawHands() {
-  int r;
+  byte r;
 
-  //  Check if minutes should be drawn
+  //  Check if minutes needs to be drawn
   if ((minutesColor & 0x0f) != COLOR_BLANK) {
-    if (minutes != previousMinutes || minutes == previousSeconds || minutes == previousHoursHand) {
-      if (bitRead(minutesColor, COLOR_BIT_TRACE) == 1) {
-        //  Fill minutes up to current time.
-        for (r = previousMinutes; r <= minutes; r++) {
+    if (bitRead(minutesColor, COLOR_BIT_TRACE) == 1) {
+
+      if (minutes != previousMinutes && (minutes > 0 || (hoursMarkerColor & 0x0f) == COLOR_BLANK)) {
+        //  Fill minutes up to current time, skip 0 for trace.
+        for (r = (minutes <= 1 ? minutes : previousMinutes); r <= minutes; r++) {
           ledWrite(RING_MINUTES, r, minutesColor & 0x0f);
         }
-      } else if (bitRead(minutesColor, COLOR_BIT_DOT) == 1) {
+      }
+
+      // Also redraw minutes if second hand has been there previously.
+      if ((secondsColor & 0x0f) != COLOR_BLANK) {
+        if (bitRead(secondsColor, COLOR_BIT_HANDS) == 1) {
+          if (seconds != previousSeconds && minutes >= previousSeconds && previousSeconds > 0) {
+            ledWrite(RING_MINUTES, previousSeconds, minutesColor & 0x0f);
+          }
+        }
+      }
+
+      // Also redraw minutes if hour hand has been there previously.
+      if ((hoursColor & 0x0f) != COLOR_BLANK) {
+        if (bitRead(hoursColor, COLOR_BIT_HANDS) == 1) {
+          if (hoursHand != previousHoursHand && minutes >= previousHoursHand && previousHoursHand > 0) {
+            ledWrite(RING_MINUTES, previousHoursHand, minutesColor & 0x0f);
+          }
+        }
+      }
+    } else if (bitRead(minutesColor, COLOR_BIT_DOT) == 1) {
+      if (minutes != previousMinutes || minutes == previousSeconds || minutes == previousHoursHand) {
         ledWrite(RING_MINUTES, minutes, minutesColor & 0x0f);
-      } else if (bitRead(minutesColor, COLOR_BIT_HANDS) == 1) {
+      }
+    } else if (bitRead(minutesColor, COLOR_BIT_HANDS) == 1) {
+      if (minutes != previousMinutes || minutes == previousSeconds || minutes == previousHoursHand) {
         ledWrite(RING_HOURS_MINUTES_SECONDS, minutes, minutesColor & 0x0f);
       }
     }
   }
 
-  //  Check if hours should be drawn
+  //  Check if hours needs to be drawn
   if ((hoursColor & 0x0f) != COLOR_BLANK) {
-    if (hoursHand != previousHoursHand || hoursHand == previousMinutes || hoursHand == previousSeconds) {
-      if (bitRead(hoursColor, COLOR_BIT_TRACE) == 1) {
-        //  Fill hours up to current time.
-        for (r = previousHoursHand; r <= hoursHand; r++) {
+    if (bitRead(hoursColor, COLOR_BIT_TRACE) == 1) {
+      if (hoursHand != previousHoursHand && (hoursHand > 0 || (hoursMarkerColor & 0x0f) == COLOR_BLANK)) {
+        //  Fill hours up to current time, skip 0 for trace.
+        for (r = (hoursHand <= 1 ? hoursHand : previousHoursHand); r <= hoursHand; r++) {
           ledWrite(RING_HOURS, r, hoursColor & 0x0f);
         }
-      } else if (bitRead(hoursColor, COLOR_BIT_DOT) == 1) {
+      }
+
+      // Also redraw hours if minutes hand has been there previously.
+      if ((minutesColor & 0x0f) != COLOR_BLANK) {
+        if (bitRead(minutesColor, COLOR_BIT_HANDS) == 1) {
+          if (minutes != previousMinutes && hoursHand >= previousMinutes && previousMinutes > 0) {
+            ledWrite(RING_HOURS, previousMinutes, hoursColor & 0x0f);
+          }
+        }
+      }
+
+      // Also redraw hours if seconds hand has been there previously.
+      if ((secondsColor & 0x0f) != COLOR_BLANK) {
+        if (bitRead(secondsColor, COLOR_BIT_HANDS) == 1) {
+          if (seconds != previousSeconds && hoursHand >= previousSeconds && previousSeconds > 0) {
+            ledWrite(RING_HOURS, previousSeconds, hoursColor & 0x0f);
+          }
+        }
+      }
+    } else if (bitRead(hoursColor, COLOR_BIT_DOT) == 1) {
+      if (hoursHand != previousHoursHand || hoursHand == previousMinutes || hoursHand == previousSeconds) {
         ledWrite(RING_HOURS, hoursHand, hoursColor & 0x0f);
-      } else if (bitRead(hoursColor, COLOR_BIT_HANDS) == 1) {
+      }
+    } else if (bitRead(hoursColor, COLOR_BIT_HANDS) == 1) {
+      if (hoursHand != previousHoursHand || hoursHand == previousMinutes || hoursHand == previousSeconds) {
         ledWrite(RING_HOURS_MINUTES, hoursHand, hoursColor & 0x0f);
       }
     }
   }
 
-  //  Check if seconds should be drawn
+  //  Check if seconds needs to be drawn
   if ((secondsColor & 0x0f) != COLOR_BLANK) {
-    if (seconds != previousSeconds || seconds == previousHoursHand || seconds == previousMinutes) {
-      if (bitRead(secondsColor, COLOR_BIT_TRACE) == 1) {
-        //  Fill seconds up to current time.
-        for (r = previousSeconds; r <= seconds; r++) {
+    if (bitRead(secondsColor, COLOR_BIT_TRACE) == 1) {
+      if (seconds != previousSeconds && (seconds > 0 || (hoursMarkerColor & 0x0f) == COLOR_BLANK)) {
+        //  Fill seconds up to current time, skip 0 for trace.
+        for (r = (seconds <= 1 ? seconds : previousSeconds); r <= seconds; r++) {
           ledWrite(RING_SECONDS, r, secondsColor & 0x0f);
         }
-      } else if (bitRead(secondsColor, COLOR_BIT_DOT) == 1) {
+      }
+
+      // Also redraw seconds if minutes hand has been there previously.
+      if ((minutesColor & 0x0f) != COLOR_BLANK) {
+        if (bitRead(minutesColor, COLOR_BIT_HANDS) == 1) {
+          if (minutes != previousMinutes && seconds >= previousMinutes && previousMinutes > 0) {
+            ledWrite(RING_SECONDS, previousMinutes, secondsColor & 0x0f);
+          }
+        }
+      }
+    } else if (bitRead(secondsColor, COLOR_BIT_DOT) == 1) {
+      if (seconds != previousSeconds || seconds == previousMinutes) {
         ledWrite(RING_SECONDS, seconds, secondsColor & 0x0f);
-      } else if (bitRead(secondsColor, COLOR_BIT_HANDS) == 1) {
+      }
+    } else if (bitRead(secondsColor, COLOR_BIT_HANDS) == 1) {
+      if (seconds != previousSeconds || seconds == previousMinutes) {
         ledWrite(RING_HOURS_MINUTES_SECONDS, seconds, secondsColor & 0x0f);
       }
     }
@@ -1210,6 +1278,31 @@ void ringAnimation(byte color) {
   
   ledWrite(RING_HOURS_MINUTES_SECONDS, 30, color);
   delay(ANIMATION_SHORT_DELAY);
+}
+
+void ringAnimationUntilNotKeyCombination(byte color, byte keyCombination) {
+
+  //  Clear clock face with wipe of LEDs
+  ledWrite(RING_HOURS_MINUTES_SECONDS, 0, color);
+  delay(ANIMATION_KEY_DELAY);
+  pressedKeys = readPressedKeys();
+  if (pressedKeys != keyCombination) {
+    return;
+  }
+  
+  for (byte loopCtr=1; loopCtr < 30; loopCtr++) {
+    ledWrite(RING_HOURS_MINUTES_SECONDS, 60-loopCtr, color);
+    ledWrite(RING_HOURS_MINUTES_SECONDS, loopCtr, color);
+    delay(ANIMATION_KEY_DELAY);
+    pressedKeys = readPressedKeys();
+    if (pressedKeys != keyCombination) {
+      return;
+    }
+  }
+  
+  ledWrite(RING_HOURS_MINUTES_SECONDS, 30, color);
+  delay(ANIMATION_KEY_DELAY);
+  pressedKeys = readPressedKeys();
 }
 
 //  ====================================================================================
@@ -1293,6 +1386,25 @@ void drawConfigurationLedSegments(byte positionAlternate) {
 
 //  ====================================================================================
 
+void loadSettingsOrFactoryDefaults() {
+  //  Load in the default clock face saved in Eeprom
+  clockFace = EEPROM.read(EEPROM_CLOCK_FACE_NUMBER);
+  //  If not a valid number then assign number
+  if (clockFace > DEFAULT_FACTORY_CLOCK_FACES) {
+    clockFace = 0;
+  }
+
+  //  Load in the default date/time appearance saved in Eeprom
+  ledSegmentsSettings = EEPROM.read(EEPROM_DATE_TIME_AND_COLON);
+
+  //  Load in the default date/time appearance saved in Eeprom
+  ledSegmentsToggleSeconds = EEPROM.read(EEPROM_ALTERNATE_COUNTER);
+  //  If not a valid number then assign number
+  if (ledSegmentsToggleSeconds == 0) {
+    ledSegmentsToggleSeconds = 5;
+  }
+}
+
 void loadFaceSettingsOrFactoryDefaults() {
   //  Load in colors saved in Eeprom for the selected clock face
   hoursMarkerColor = EEPROM.read(EEPROM_CLOCK_FACE_SETTINGS + clockFace*DEFAULT_CLOCK_FACE_LENGTH + 0);
@@ -1306,6 +1418,21 @@ void loadFaceSettingsOrFactoryDefaults() {
     hoursColor = DEFAULT_FACTORY_COLORS[clockFace][1]; 
     minutesColor = DEFAULT_FACTORY_COLORS[clockFace][2];
     secondsColor = DEFAULT_FACTORY_COLORS[clockFace][3];
+  }
+}
+
+void writeFactorySettingsToEeprom() {
+  // Write default values to Eeprom.
+  EEPROM.write(EEPROM_CLOCK_FACE_NUMBER, 0);
+  EEPROM.write(EEPROM_DATE_TIME_AND_COLON, DISPLAY_TIME_AND_DATE | DISPLAY_COLONS_FLASH_EVERY_SECOND);
+  EEPROM.write(EEPROM_ALTERNATE_COUNTER, 5);
+
+  // Write default clock faces to Eeprom.
+  for (byte r = 0; r < DEFAULT_FACTORY_CLOCK_FACES; r++) {
+    EEPROM.write(EEPROM_CLOCK_FACE_SETTINGS + r*DEFAULT_CLOCK_FACE_LENGTH + 0, DEFAULT_FACTORY_COLORS[r][0]);
+    EEPROM.write(EEPROM_CLOCK_FACE_SETTINGS + r*DEFAULT_CLOCK_FACE_LENGTH + 1, DEFAULT_FACTORY_COLORS[r][1]);
+    EEPROM.write(EEPROM_CLOCK_FACE_SETTINGS + r*DEFAULT_CLOCK_FACE_LENGTH + 2, DEFAULT_FACTORY_COLORS[r][2]);
+    EEPROM.write(EEPROM_CLOCK_FACE_SETTINGS + r*DEFAULT_CLOCK_FACE_LENGTH + 3, DEFAULT_FACTORY_COLORS[r][3]);
   }
 }
 
@@ -1333,45 +1460,24 @@ void setup() {
   // Fade up the HELLO display
   for (byte br = 0; br < ledSegmentsBrightness; br++) {
     setLedSegmentsBrightness(br);
-    delay(250 - br*10);
+    delay(225 - br*15);
   }
 
-  delay(350);
+  delay(500);
 
   //  Clear led memory buffers in PIC processor
   ledWriteAllOff();
 
+  //  Clear 7-segments display
+  ledSegmentsClearAll();
+
   //  On cold start get time and then set it to start clock up
   //  getDateDs1307(&seconds, &minutes, &hours, &dayOfWeek, &dayOfMonth, &months, &years);
   
-  //  Load in the default clock face saved in Eeprom
-  clockFace = EEPROM.read(EEPROM_CLOCK_FACE_NUMBER);
-  //  If not a valid number then assign number
-  if (clockFace > DEFAULT_FACTORY_CLOCK_FACES) {
-    clockFace = 0;
-    //  Store new value in Eeprom
-    EEPROM.write(EEPROM_CLOCK_FACE_NUMBER, clockFace);
-  }
-
-  //  Load in the default date/time appearance saved in Eeprom
-  ledSegmentsSettings = EEPROM.read(EEPROM_DATE_TIME_AND_COLON);
-  //  If not a valid number then assign number
-  if (ledSegmentsSettings == 0) {
-    ledSegmentsSettings = DISPLAY_TIME_AND_DATE | DISPLAY_COLONS_FLASH_EVERY_SECOND;
-    //  Store new value in Eeprom
-    EEPROM.write(EEPROM_DATE_TIME_AND_COLON, ledSegmentsSettings);
-  }
-
-  //  Load in the default date/time appearance saved in Eeprom
-  ledSegmentsToggleSeconds = EEPROM.read(EEPROM_ALTERNATE_COUNTER);
-  //  If not a valid number then assign number
-  if (ledSegmentsToggleSeconds == 0) {
-    ledSegmentsToggleSeconds = 5;
-    //  Store new value in Eeprom
-    EEPROM.write(EEPROM_ALTERNATE_COUNTER, ledSegmentsToggleSeconds);
-  }
-
+  loadSettingsOrFactoryDefaults();
   loadFaceSettingsOrFactoryDefaults();
+
+  delay(500);
 }
 
 //  ====================================================================================
@@ -1391,8 +1497,8 @@ void initLedSegmentsStatusByMode(byte value) {
 void userSelectMode() {
   initUserSelect();
 
+  int8_t value = MODE_NORMAL;
   ledSegmentsColons = DISPLAY_COLONS_OFF;
-  int value = MODE_NORMAL;
   initLedSegmentsStatusByMode(value);
 
   strncpy_P(segmentsDisplayChars, DISP_SELECT, 6);
@@ -1405,17 +1511,17 @@ void userSelectMode() {
     pressedKeys = readPressedKeys();
 
     if (pressedKeys == KEY_PRESSED_1) {
-      value--;
-      if (value < MODE_NORMAL) {
-        value = MODE_SET_SETTINGS;
+      value++;
+      if (value > MODE_SET_TIME_AND_DATE) {
+        value = MODE_NORMAL;
       }
       blinkUpdate = 2;
     }
 
     if (pressedKeys == KEY_PRESSED_3) {
-      value++;
-      if (value > MODE_SET_SETTINGS) {
-        value = MODE_NORMAL;
+      value--;
+      if (value < MODE_NORMAL) {
+        value = MODE_SET_TIME_AND_DATE;
       }
       blinkUpdate = 2;
     }
@@ -1466,9 +1572,6 @@ void userSelectMode() {
 //  ====================================================================================
 
 void userSelectedStyle() {
-  //  Save selected clock face to Eeprom   
-  // EEPROM.write(EEPROM_CLOCK_FACE, clockFace);
-
   // Write selected face on display
   strncpy_P(segmentsDisplayChars, DISP_FACE, 6);
   segmentsDisplayChars[5] = clockFace + '0';
@@ -1688,7 +1791,7 @@ void normalMode() {
 //  ====================================================================================
 
 
-int getValueByPosition(byte position) {
+byte getValueByPosition(byte position) {
   if (position == SET_POSITION_HOURS) {
     return hours;
   }
@@ -1712,7 +1815,7 @@ int getValueByPosition(byte position) {
   }
 }
 
-void setValueByPosition(byte position, int value) {
+void setValueByPosition(byte position, byte value) {
   if (position == SET_POSITION_HOURS) {
     hours = value;
   }
@@ -1733,7 +1836,7 @@ void setValueByPosition(byte position, int value) {
   }
 }
 
-int getDaysMaxBasedOnMonthAndLeapYear() {
+int8_t getDaysMaxBasedOnMonthAndLeapYear() {
   byte days = 31;
   if (months == 4 || months == 6 || months == 9 || months == 11) {
     days = 30;
@@ -1766,7 +1869,7 @@ void userSetTimeAndDate() {
     }
 
     if (pressedKeys == KEY_PRESSED_1) {
-      int value = getValueByPosition(position);
+      int8_t value = getValueByPosition(position);
       value--;
       if (value < valueTimeDateMin[position-1]) {
         if (position == SET_POSITION_DAY) {
@@ -1782,7 +1885,7 @@ void userSetTimeAndDate() {
     }
 
     if (pressedKeys == KEY_PRESSED_3) {
-      int value = getValueByPosition(position);
+      int8_t value = getValueByPosition(position);
       value++;
       if (position == SET_POSITION_DAY) {
         if (value > getDaysMaxBasedOnMonthAndLeapYear()) {
@@ -2051,6 +2154,37 @@ void userSettings() {
   ledSegmentsClearAll();
 }
 
+void userResetFactoryDefaults() {
+  ledSegmentsStatus = MODE_LED_RESET;
+  ledSegmentsDisplay = DISPLAY_RESET;
+  ledSegmentsColons = DISPLAY_COLONS_OFF;
+  ledWriteAllOff();
+
+  strncpy_P(segmentsDisplayChars, DISP_RESET, 6);
+  ledSegmentsDisplayChars();
+
+  // Antimate circle and check keys are pressed continiuously.
+  ringAnimationUntilNotKeyCombination(COLOR_RED, KEY_PRESSED_1_2);
+  
+  // If reset keys are still pressed, then factory reset settings.
+  if (pressedKeys == KEY_PRESSED_1_2) {
+    waitForReleaseAllButtons();
+    ringAnimation(COLOR_BLANK);
+    writeFactorySettingsToEeprom();
+    loadSettingsOrFactoryDefaults();
+    loadFaceSettingsOrFactoryDefaults();
+    ringAnimation(COLOR_GREEN);
+  }
+
+  ringAnimation(COLOR_BLANK);
+
+  // Force redrawing clock face.
+  resetPreviousValues();
+
+  //  Clear 7-segments display
+  ledSegmentsClearAll();
+}
+
 //  ====================================================================================
 
   /**
@@ -2066,32 +2200,36 @@ void userSettings() {
    * Button 2 - Enter menu
    * Button 1 - Previous menu (1-3)
    * 
-   * Menu 1 - Set Time and Date
-   *          Set Hour, Minutes, Seconds
-   *              Button 3 - Up
-   *              Button 2 - Enter
-   *              Button 1 - Down
-   *          Set Year, Month, Day
-   *              Button 3 - Up
-   *              Button 2 - Enter
-   *              Button 1 - Down
-   * Menu 2 - Config current clock style
-   *          Hours
-   *              Button 3 - Change colors  (0-disable)
-   *              Button 1 - Hand, Dot, Trace
-   *          Minutes
-   *              Button 3 - Change colors  (0-disable)
-   *              Button 1 - Hand, Dot, Trace
-   *          Seconds
-   *              Button 3 - Change colors  (0-disable)
-   *              Button 1 - Hand, Dot, Trace
-   *          Markers
-   *              Button 3 - Change colors  (0-disable)
-   *              Button 1 - Quarterly, Hourly, Twelve only
-   * Menu 3 - Config display
-   *          Display - None, Time, Date, Time & Date alternating
-   *          Speed   - Choose alternating speed in seconds
-   *          Colons  - On or Flashing
+   * Menu 1   - Set Time and Date
+   *              Set Hour, Minutes, Seconds
+   *                  Button 3 - Up
+   *                  Button 2 - Enter
+   *                  Button 1 - Down
+   *             Set Year, Month, Day
+   *                  Button 3 - Up
+   *                  Button 2 - Enter
+   *                  Button 1 - Down
+   * Menu 2   - Config display
+   *              Set Startup Face - Clock style (0-9)
+   *              Set Display      - None, Time, Date, Time & Date alternating
+   *              Set Speed        - Choose alternating speed in seconds
+   *              Set Colons       - On or Flashing
+   * Menu 3   - Config current clock style
+   *              Set Hours
+   *                  Button 3 - Change colors  (0-disable)
+   *                  Button 1 - Hand, Dot, Trace
+   *              Set Minutes
+   *                  Button 3 - Change colors  (0-disable)
+   *                  Button 1 - Hand, Dot, Trace
+   *              Set Seconds
+   *                  Button 3 - Change colors  (0-disable)
+   *                  Button 1 - Hand, Dot, Trace
+   *              Set Markers
+   *                  Button 3 - Change colors  (0-disable)
+   *                  Button 1 - Quarterly, Hourly, Twelve only
+   * 
+   * Reset factory settings
+   * Button 1 & 2     - Hold down until full red circle is completed for reset to factory settings
    * 
    * Programming mode    
    * Button 1 & 2 & 3 - PIC standby for programming Arduino (PIC is also reading the buttons)
@@ -2125,7 +2263,7 @@ void loop() {
   // Reset to factory defaults.
   //
   if (pressedKeys == KEY_PRESSED_1_2) {
-    // TODO  userResetFactoryDefaults();
+    userResetFactoryDefaults();
   }
   
   if (mode == MODE_SET_TIME_AND_DATE) {
